@@ -1,0 +1,359 @@
+2320399 - Davi Donato
+2321168 - Yuri
+
+---------------------------------------------------------------------------------------------------
+1) 
+E: Faça um programa para criar dois processos, o pai escreve seu pid e espera o
+filho terminar e o filho escreve o seu pid e termina.
+
+CODIGO ==========================================
+ex1.c =======================
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+
+int main() {
+    pid_t pid = fork();
+    if (pid > 0) { // RODANDO NO PAI
+        printf("(PAI) PID pai: %d \n", getpid());
+        int status;
+        waitpid(-1, &status, 0);
+        }
+    else if (pid == 0) { // RODANDO NO FILHO
+        printf("(FILHO) PID filho: %d \n", getpid());
+        exit(0);
+        }
+    else { printf("Erro"); }
+    }
+
+COMANDO =========================================
+- gcc ex1.c -o ex1
+- ./ex1
+    (PAI) PID pai: 32373 
+    (FILHO) PID filho: 32374 
+
+R: Pai exibiu seu pid, assim como seu filho, pid diferentes pois são processos diferentes
+
+
+---------------------------------------------------------------------------------------------------
+2) 
+E: Agora, usando a mesma estrutura de processos pai e filho, declare uma
+variável visível ao pai e ao filho, no pai inicialize a variável com1 e imprima seu
+valor antes do fork(). No filho, altere o valor da variável para 5 e imprima o seu
+valor antes do exit(). Agora, no pai, imprima novamente o valor da variável após o
+filho ter alterado a variável - após a waitpid(). Justifique os resultados obtidos.
+
+CODIGO ==========================================
+ex2.c =======================
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h>
+int main() {
+    int variavel = 1;
+    printf("Variável antes do fork : %d\n", variavel);
+    pid_t pid = fork();
+    if (pid > 0) { // RODANDO NO PAI
+        printf("(PAI) PID pai: %d \n", getpid());
+        int status;
+        waitpid(-1, &status, 0);
+        printf("(PAI) Depois do filho alterar a variavel: %d \n", variavel);
+        }
+    else if (pid == 0) { // RODANDO NO FILHO
+        printf("(FILHO) PID filho: %d \n", getpid());
+        variavel = 5;
+        printf("(FILHO) Filho Alterou a variavel: %d \n", variavel);
+        exit(0);
+        }
+    else { printf("Erro"); }
+    }
+COMANDO =========================================
+- gcc ex2.c -o ex2
+- ./ex2
+    Variável antes do fork : 1
+    (PAI) PID pai: 32417 
+    (FILHO) PID filho: 32418 
+    (FILHO) Filho Alterou a variavel: 5 
+    (PAI) Depois do filho alterar a variavel: 1 
+
+
+R: Mesmo o filho tendo modificado a variável o resultadou não 
+refletiu no processo pai, pois deve-se lembrar que os 
+processos fazem cópias da memoria do processo pai, logo 
+não utilizam as mesmas variáveis
+
+
+---------------------------------------------------------------------------------------------------
+3) 
+E: Use o programa anterior para ler e ordenar um vetor de 10 posições. O filho
+ordena o vetor e o pai exibe os dados do vetor antes do fork() e depois do
+waitpid(). Eles usarão o mesmo vetor na memória? Justifique.
+
+CODIGO ==========================================
+ex3.c =======================
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#define N 10
+
+int main() {
+    int variavel = 1;
+    printf("Variável antes do fork : %d\n", variavel);
+    int vetor[N] = {2, 1, 3, 5, 7, 6, 4, 9, 0, 8};
+    printf("Vetor antes do fork: ");
+    for (int i = 0; i < 10; i++) {  printf("%d ",vetor[i]);  }
+    printf("\n");
+    pid_t pid = fork();
+    if (pid > 0) { // RODANDO NO PAI
+        printf("(PAI) PID pai: %d \n", getpid());
+        int status;
+        waitpid(-1, &status, 0);
+        printf("(PAI) Depois do filho alterar a variavel: %d \n", variavel);
+        printf("(PAI) Vetor depois do waitpid: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        }
+    else if (pid == 0) { // RODANDO NO FILHO
+        printf("(FILHO) PID filho: %d \n", getpid());
+        variavel = 5;
+        printf("(FILHO) Filho Alterou a variavel: %d \n", variavel);
+        for (int i = 0; i < N-1; i++) { 
+            for (int j = 0; j < N-i-1; j++) {
+                if (vetor[j] > vetor[j+1]) {
+                    int tmp = vetor[j];
+                    vetor[j] = vetor[j+1];
+                    vetor[j+1] = tmp;
+                }
+            }
+        }
+        printf("(FILHO) Vetor alterado antes do exit: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        exit(0);
+        }
+    else { printf("Erro"); }
+    }
+
+COMANDO =========================================
+- gcc ex3.c -o ex3
+- ./ex3
+    Variável antes do fork : 1
+    Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+    (PAI) PID pai: 32443 
+    (FILHO) PID filho: 32444 
+    (FILHO) Filho Alterou a variavel: 5 
+    (FILHO) Vetor alterado antes do exit: 0 1 2 3 4 5 6 7 8 9 
+    (PAI) Depois do filho alterar a variavel: 1 
+    (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 0 8 
+
+R:Mesmo o vetor sendo um ponteiro na prática, ainda sim 
+por conta do COW (Copy-on-write) tanto pilha quanto heap são copiados, 
+funciona como duas memórias diferentes, uma memória virtual. Por isso o 
+filho não altera o valor original mesmo tendo o ponteiro certo
+
+---------------------------------------------------------------------------------------------------
+4)
+E: Modifique o programa anterior para que o filho execute um programa elaborado
+por você, que mande imprimir uma mensagem qualquer no vídeo, por exemplo,
+“alo mundo”. Em seguida altere o programa do item 4 para o filho executar o
+programa echo da shell.
+
+CODIGO ==========================================
+ola.c =======================
+#include <stdio.h>
+
+int main(void) {
+    printf("Oi World (Meu)!\n");
+    return 0;
+}
+
+ex4.c =======================
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#define N 10
+
+int main() {
+    int variavel = 1;
+    printf("Variável antes do fork : %d\n", variavel);
+    int vetor[N] = {2, 1, 3, 5, 7, 6, 4, 9, 0, 8};
+    printf("Vetor antes do fork: ");
+    for (int i = 0; i < 10; i++) {  printf("%d ",vetor[i]);  }
+    printf("\n");
+    pid_t pid = fork();
+    if (pid > 0) { // RODANDO NO PAI
+        printf("(PAI) PID pai: %d \n", getpid());
+        int status;
+        waitpid(-1, &status, 0);
+        printf("(PAI) Depois do filho alterar a variavel: %d \n", variavel);
+        printf("(PAI) Vetor depois do waitpid: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        }
+    else if (pid == 0) { // RODANDO NO FILHO
+        printf("(FILHO) PID filho: %d \n", getpid());
+        variavel = 5;
+        printf("(FILHO) Filho Alterou a variavel: %d \n", variavel);
+        for (int i = 0; i < N-1; i++) {
+            for (int j = 0; j < N-i-1; j++) {
+                if (vetor[j] > vetor[j+1]) {
+                    int tmp = vetor[j];
+                    vetor[j] = vetor[j+1];
+                    vetor[j+1] = tmp;
+                }
+            }
+        }
+        printf("(FILHO) Vetor alterado antes do exit: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        execl("./ola", "ola", (char *)NULL);
+        exit(0);
+
+        }
+    else { printf("Erro"); }
+    }
+
+ex4_2.c =====================
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <stdio.h>
+#include <stdlib.h> 
+#define N 10
+
+int main() {
+    int variavel = 1;
+    printf("Variável antes do fork : %d\n", variavel);
+    int vetor[N] = {2, 1, 3, 5, 7, 6, 4, 9, 0, 8};
+    printf("Vetor antes do fork: ");
+    for (int i = 0; i < 10; i++) {  printf("%d ",vetor[i]);  }
+    printf("\n");
+    pid_t pid = fork();
+    if (pid > 0) { // RODANDO NO PAI
+        printf("(PAI) PID pai: %d \n", getpid());
+        int status;
+        waitpid(-1, &status, 0);
+        printf("(PAI) Depois do filho alterar a variavel: %d \n", variavel);
+        printf("(PAI) Vetor depois do waitpid: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        }
+    else if (pid == 0) { // RODANDO NO FILHO
+        printf("(FILHO) PID filho: %d \n", getpid());
+        variavel = 5;
+        printf("(FILHO) Filho Alterou a variavel: %d \n", variavel);
+        for (int i = 0; i < N-1; i++) {
+            for (int j = 0; j < N-i-1; j++) {
+                if (vetor[j] > vetor[j+1]) {
+                    int tmp = vetor[j];
+                    vetor[j] = vetor[j+1];
+                    vetor[j+1] = tmp;
+                }
+            }
+        }
+        printf("(PAI) Vetor depois do waitpid: ");
+        for (int i = 0; i < N; i++) {  printf("%d ", vetor[i]); }
+        printf("\n"); 
+        execl("/bin/echo", "echo", "Oi world (echo)", NULL);
+        exit(0);
+        }
+    else { printf("Erro"); }
+    }
+
+
+COMANDO =========================================
+gcc ola.c -o ola
+gcc ex4.c -o ex4
+gcc ex4_2.c -o ex4_2
+
+- ./ex4
+    Variável antes do fork : 1
+    Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+    (PAI) PID pai: 32475 
+    (FILHO) PID filho: 32476 
+    (FILHO) Filho Alterou a variavel: 5 
+    (FILHO) Vetor alterado antes do exit: 0 1 2 3 4 5 6 7 8 9 
+    Oi World (Meu)!
+    (PAI) Depois do filho alterar a variavel: 1 
+    (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 0 8 
+- ./ex4_2
+    Variável antes do fork : 1
+    Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+    (PAI) PID pai: 32515 
+    (FILHO) PID filho: 32517 
+    (FILHO) Filho Alterou a variavel: 5 
+    (PAI) Vetor depois do waitpid: 0 1 2 3 4 5 6 7 8 9 
+    Oi world (echo)
+    (PAI) Depois do filho alterar a variavel: 1 
+    (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 
+
+
+
+R: Ambos os códigos resultaram no mesmo, a impressão da mensagem, executado pelo filho,
+tanto usando meu programa, quanto usando o echo.
+
+
+---------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+PROMPTS :
+    COMPILACOES
+        gcc ex1.c -o ex1
+        gcc ex2.c -o ex2
+        gcc ex3.c -o ex3
+        gcc ex4.c -o ex4
+        gcc ex4_2.c -o ex4_2
+        gcc ola.c -o ola
+
+    EXECUCOES:
+    dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex1
+        (PAI) PID pai: 32373 
+        (FILHO) PID filho: 32374 
+    dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex2
+        Variável antes do fork : 1
+        (PAI) PID pai: 32417 
+        (FILHO) PID filho: 32418 
+        (FILHO) Filho Alterou a variavel: 5 
+        (PAI) Depois do filho alterar a variavel: 1 
+    dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex3
+        Variável antes do fork : 1
+        Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+        (PAI) PID pai: 32443 
+        (FILHO) PID filho: 32444 
+        (FILHO) Filho Alterou a variavel: 5 
+        (FILHO) Vetor alterado antes do exit: 0 1 2 3 4 5 6 7 8 9 
+        (PAI) Depois do filho alterar a variavel: 1 
+        (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 0 8 
+    dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex4
+        Variável antes do fork : 1
+        Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+        (PAI) PID pai: 32475 
+        (FILHO) PID filho: 32476 
+        (FILHO) Filho Alterou a variavel: 5 
+        (FILHO) Vetor alterado antes do exit: 0 1 2 3 4 5 6 7 8 9 
+        Oi World (Meu)!
+        (PAI) Depois do filho alterar a variavel: 1 
+        (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 0 8 
+    dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex4_2
+        Variável antes do fork : 1
+        Vetor antes do fork: 2 1 3 5 7 6 4 9 0 8 
+        (PAI) PID pai: 32515 
+        (FILHO) PID filho: 32517 
+        (FILHO) Filho Alterou a variavel: 5 
+        (PAI) Vetor depois do waitpid: 0 1 2 3 4 5 6 7 8 9 
+        Oi world (echo)
+        (PAI) Depois do filho alterar a variavel: 1 
+        (PAI) Vetor depois do waitpid: 2 1 3 5 7 6 4 9 
+
+

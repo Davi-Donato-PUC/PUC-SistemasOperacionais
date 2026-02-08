@@ -1,0 +1,23 @@
+https://www.cs.cmu.edu/afs/cs/academic/class/15213-f99/www/class26/
+
+
+COMPILAR
+gcc interControllerSim.c -o inter
+gcc kernelSim.c -o kernel
+gcc process.c -o process
+gcc sfss_server.c -o server
+
+
+EXECUTAR
+./server  & ./inter & ./kernel
+
+
+
+
+
+
+
+
+
+
+

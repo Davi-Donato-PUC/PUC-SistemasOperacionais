@@ -1,0 +1,290 @@
+Davi Donato 
+Yuri Trindade
+
+
+1)  ----------------------------------------------------------------------------------------------- >>>
+CÓDIGO :
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#define EVER ;;
+
+void intHandler(int sinal);
+void quitHandler(int sinal);
+
+int main (void) {
+    void (*p)(int); // ponteiro para função que recebe int como
+    // parâmetro
+    p = signal(SIGINT, intHandler);
+    printf("Endereco do manipulador anterior %p\n", p);
+    p = signal(SIGQUIT, quitHandler);
+    printf("Endereco do manipulador anterior %p\n", p);
+    puts ("Ctrl-C desabilitado. Use Ctrl-\\ para terminar");
+    for(EVER);
+    }
+
+void intHandler(int sinal) {
+    printf("Você pressionou Ctrl-C (%d) \n", sinal);
+    }
+
+void quitHandler(int sinal) {
+    printf("Terminando o processo...\n");
+    exit (0);
+    }
+
+# --------------------------- 
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#define EVER ;;
+
+void intHandler(int sinal);
+void quitHandler(int sinal);
+
+int main (void) {
+    for(EVER);
+    }
+
+void intHandler(int sinal) {
+    printf("Você pressionou Ctrl-C (%d) \n", sinal);
+    }
+
+void quitHandler(int sinal) {
+    printf("Terminando o processo...\n");
+    exit (0);
+    }
+
+
+
+Com signal:
+CTRL + C : Apenas o print 
+CTRL + \ : Programa termina
+
+Sem Signal:
+CTRL + C : Programa termina 
+CTRL + \ : Programa termina + Core dumped
+
+Explicação: 
+Sem os tratadores de sinal, apenas acontece o comportamento padrão do sistema.
+
+
+
+
+2)  ----------------------------------------------------------------------------------------------- >>>
+
+CÓDIGO :
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+
+void trataSIGKILL(int sinal) {
+    printf("SINAL : %d\n", sinal);
+    exit(0);
+    }
+
+int main() {
+    signal(SIGKILL, trataSIGKILL);
+    raise(SIGKILL);
+    return 0;
+    }
+
+
+
+
+EXPLICAÇÃO : 
+Sinais tipo o SIGKILL e SIGSTOP não podem ser interceptados, o kernel garante que esses sinais terminem / parem o processo imediatamente
+Logo, ao serem lançados ocorre o comportamento padrão do sistema,
+no caso o programa encerra com a mensagem 'killed'
+
+
+
+3) ------------------------------------------------------------------------------------------------ >>>
+
+CÓDIGO :
+ex3.c --------------------------------- >>>
+#include <stdio.h>
+#include <signal.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/wait.h>
+#include <sys/types.h>
+
+
+
+void childhandler(int signo);
+int delay;
+
+int main (int argc, char *argv[]) {
+    pid_t pid;
+    signal(SIGCHLD, childhandler);
+    if ((pid = fork()) < 0) {
+        fprintf(stderr, "Erro ao criar filho\n");
+        exit(-1);
+        }
+    if (pid == 0) sleep(3); /* ou sleep(3);*/
+    else {
+        sscanf(argv[1], "%d", &delay); /* read delay from command line */
+        sleep(delay);
+        printf("Program %s exceeded limit of %d seconds!\n", argv[2], delay);
+        kill(pid, SIGKILL);
+        sleep(1); /* necessary for SIGCHLD to arrive */
+        }
+    return 0;
+    }
+void childhandler(int signo) {
+    int status;
+    pid_t pid = wait(&status);
+    printf("Child %d terminated within %d seconds com estado %d.\n", pid, delay, status);
+    exit(0);
+    }
+
+
+
+
+
+TERMINAL :
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex3 3 /bin/ls
+Program /bin/ls exceeded limit of 3 seconds!
+Child 48008 terminated within 3 seconds com estado 0.
+
+
+EXPLICAÇÃO : 
+O Código é simples, esse código é um controlador de tempo :
+Se o filho terminar rápido -> o tratador imprime mensagem de término normal.
+Se o filho demorar demais -> o pai o mata com SIGKILL.
+
+
+
+4) ------------------------------------------------------------------------------------------------ >>>
+
+CÓDIGO:
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <signal.h>
+#include <sys/wait.h>
+#include <errno.h>
+#include <string.h>
+
+void child_loop(int id) {
+    long cont = 0;
+    while (1) {
+        printf("Filho %d (pid=%d) contador=%ld\n", id, getpid(), cont++);
+        fflush(stdout);
+        sleep(1); 
+    }
+}
+
+int main(void) {
+    pid_t p1, p2;
+    int status;
+
+    p1 = fork();
+    if (p1 < 0) {
+        perror("fork p1");
+        exit(1);
+    }
+    if (p1 == 0) {
+        child_loop(1);
+        _exit(0);
+    }
+
+    p2 = fork();
+    if (p2 < 0) {
+        perror("fork p2");
+        kill(p1, SIGTERM);
+        waitpid(p1, NULL, 0);
+        exit(1);
+    }
+    if (p2 == 0) {
+        child_loop(2);
+        _exit(0);
+    }
+
+    printf("Pai: filhos criados p1=%d p2=%d\n", p1, p2);
+
+    if (kill(p1, SIGSTOP) == -1) {
+        fprintf(stderr, "Parando f1 deu errado");
+    }
+    if (kill(p2, SIGSTOP) == -1) {
+        fprintf(stderr, "Parando f2 deu errado");
+
+    }
+
+    usleep(200000); /* 200 ms */
+
+    const int TROCAS = 10;
+    pid_t ativo  = p1;  
+    pid_t parado = p2;
+
+    for (int i = 0; i < TROCAS; ++i) {
+        printf("Pai: troca %d - resumindo %d, parando %d\n", i+1, (int)ativo, (int)parado);
+
+        if (kill(ativo, SIGCONT) == -1) { fprintf(stderr, "ERRO AQUI"); }
+
+        sleep(1);
+
+        if (kill(ativo, SIGSTOP) == -1) { fprintf(stderr, "ERRO AQUI 2"); }
+
+        pid_t tmp = ativo;
+        ativo = parado;
+        parado = tmp;
+
+        
+        usleep(200000); /* 200 ms */
+    }
+
+    printf("Pai: %d trocas concluídas — matando filhos...\n", TROCAS);
+
+    // MATA GERAL NO FIM
+    if (kill(p1, SIGKILL) == -1) { if (errno != ESRCH) fprintf(stderr, "Erro SIGTERM p1: %s\n", strerror(errno)); }
+    if (kill(p2, SIGKILL) == -1) { if (errno != ESRCH) fprintf(stderr, "Erro SIGTERM p2: %s\n", strerror(errno)); }
+
+    // Espera pelos filhos para evitar zumbis
+    if (waitpid(p1, &status, 0) == -1) { if (errno != ECHILD) perror("waitpid p1"); } 
+    else { printf("Pai: filho p1 (%d) terminou com status %d\n", (int)p1, WEXITSTATUS(status)); }
+
+    if (waitpid(p2, &status, 0) == -1) { if (errno != ECHILD) perror("waitpid p2"); } 
+    else { printf("Pai: filho p2 (%d) terminou com status %d\n", (int)p2, WEXITSTATUS(status)); }
+
+    printf("Pai: fim.\n");
+    return 0;
+}
+
+
+TERMINAL :
+Filho 1 (pid=53383) contador=0
+Pai: filhos criados p1=53383 p2=53384
+Pai: troca 1 - resumindo 53383, parando 53384
+Filho 1 (pid=53383) contador=1
+Pai: troca 2 - resumindo 53384, parando 53383
+Filho 2 (pid=53384) contador=0
+Pai: troca 3 - resumindo 53383, parando 53384
+Filho 1 (pid=53383) contador=2
+Pai: troca 4 - resumindo 53384, parando 53383
+Filho 2 (pid=53384) contador=1
+Pai: troca 5 - resumindo 53383, parando 53384
+Filho 1 (pid=53383) contador=3
+Pai: troca 6 - resumindo 53384, parando 53383
+Filho 2 (pid=53384) contador=2
+Pai: troca 7 - resumindo 53383, parando 53384
+Filho 1 (pid=53383) contador=4
+Pai: troca 8 - resumindo 53384, parando 53383
+Filho 2 (pid=53384) contador=3
+Pai: troca 9 - resumindo 53383, parando 53384
+Filho 1 (pid=53383) contador=5
+Filho 1 (pid=53383) contador=6
+Pai: troca 10 - resumindo 53384, parando 53383
+Filho 2 (pid=53384) contador=4
+Pai: 10 trocas concluídas — matando filhos...
+Pai: filho p1 (53383) terminou com status 0
+Pai: filho p2 (53384) terminou com status 0
+Pai: fim.
+
+EXPLICAÇÃO : 
+
+Os filhos executam um loop infinito (child_loop) que imprime seu PID e um contador a cada segundo, isso facilita ver no terminal qual filho está executando.
+O pai primeiro para ambos os filhos (para ganhar controle), depois alterna resumindo um filho por 1 segundo e parando novamente,  10 trocas.
+No final o pai envia SIGKILL para terminar os filhos e faz waitpid para recolher os processos e evitar processos zumbis.
+

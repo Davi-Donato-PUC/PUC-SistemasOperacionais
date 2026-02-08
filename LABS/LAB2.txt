@@ -1,0 +1,524 @@
+Yuri Trindade-2321168
+Davi Donato-2320399
+
+
+
+--------------------------------------------------------------------------------------------Exercício 1--------------------------------------------------------------------------------------------------------------
+
+E:Soma de matrizes
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+
+
+#define LINHAS 3
+#define COLUNAS 3
+
+void print_matriz(int *matriz, const char *nome) {
+    printf("Matriz %s:\n", nome);
+    for (int i = 0; i < LINHAS; i++) {
+        for (int j = 0; j < COLUNAS; j++) {
+            // Acessa o elemento (i, j) 
+            printf("%d\t", matriz[i * COLUNAS + j]);
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+int main() {
+    int shm_id_A, shm_id_B, shm_id_C;
+    int *matriz_A, *matriz_B, *matriz_C;
+    int size = LINHAS * COLUNAS * sizeof(int);
+    //memória compartilhada 
+    shm_id_A = shmget(IPC_PRIVATE, size, IPC_CREAT | 0666);
+    shm_id_B = shmget(IPC_PRIVATE, size, IPC_CREAT | 0666);
+    shm_id_C = shmget(IPC_PRIVATE, size, IPC_CREAT | 0666);
+
+    if (shm_id_A == -1 || shm_id_B == -1 || shm_id_C == -1) {
+        perror("shmget");
+        exit(1);
+    }
+    
+    matriz_A = (int *)shmat(shm_id_A, NULL, 0);
+    matriz_B = (int *)shmat(shm_id_B, NULL, 0);
+    matriz_C = (int *)shmat(shm_id_C, NULL, 0);
+
+    if (matriz_A == (int *)-1 || matriz_B == (int *)-1 || matriz_C == (int *)-1) {
+        perror("shmat");
+        exit(1);
+    }
+
+    
+    printf("Inicializando Matrizes\n");
+    for (int i = 0; i < LINHAS * COLUNAS; i++) {
+        matriz_A[i] = i + 1;
+        matriz_B[i] = (i + 1) * 2;
+    }
+    print_matriz(matriz_A, "A");
+    print_matriz(matriz_B, "B");
+    
+    printf("Criando %d processos filhos para cada linha\n", LINHAS);
+    for (int i = 0; i < LINHAS; i++) {
+        pid_t pid = fork();
+
+        if (pid < 0) {
+            perror("fork");
+            exit(1);    
+        } 
+        else if (pid == 0) { //filho
+            // Calcula a soma para a linha (i)
+            for (int j = 0; j < COLUNAS; j++) {
+                int index = i * COLUNAS + j;
+                matriz_C[index] = matriz_A[index] + matriz_B[index];
+            }            
+            exit(0);
+        } }
+    for (int i = 0; i < LINHAS; i++) {
+        wait(NULL);
+    }
+
+    print_matriz(matriz_C, "Resultado (C)");
+
+    shmdt(matriz_A);
+    shmdt(matriz_B);
+    shmdt(matriz_C);
+    
+    shmctl(shm_id_A, IPC_RMID, NULL);
+    shmctl(shm_id_B, IPC_RMID, NULL);
+    shmctl(shm_id_C, IPC_RMID, NULL);
+    return 0;
+}
+
+Compilação/saída:
+gcc ex1.c -o ex1                              
+~/Documents/SO/lab2  ./ex1                                         
+Inicializando Matrizes
+Matriz A:
+1	2	3	
+4	5	6	
+7	8	9	
+
+Matriz B:
+2	4	6	
+8	10	12	
+14	16	18	
+
+Criando 3 processos filhos para cada linha
+Matriz Resultado (C):
+3	6	9	
+12	15	18	
+21	24	27	
+
+
+Conclusão: 
+O processo pai foi o responsável por criar três espaços nas memórias compartilhadas. Para cada linha da matriz, o pai 
+criou um processo filho independente, e cada fihou calcuou a soma de apenas uma linha e escreveu o resultado na área de 
+memória da matriz C,então a matriz foi sendo preenchida em paralelo. Por fim, o pai usou a função wait para esperar todos os 
+filhos terminarem suas tarefas antes de imprimir o resultado.
+
+
+
+---------------------------------------------------------------------------------------------------Exercício 2-------------------------------------------------------------------------------------------------------
+E:Mensagem do Dia
+
+----------------------------------------------------------------------------------------------------EX2a.C------------------------------------------------------------------------------------------------------------
+// Arquivo: servidor_msg.c
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+#define CHAVE 8752
+#define BUFFER 1024
+
+int main() {
+    int shm_id;
+    char *shm_ptr;
+
+    // Cria o segmento de memória compartilhada com a chave 8752
+    shm_id = shmget(CHAVE, BUFFER, IPC_CREAT | 0666);
+    if (shm_id < 0) {
+        perror("shmget - servidor");
+        exit(1);
+    }
+
+    // Anexa o segmento de memória ao espaço de endereçamento do processo
+    shm_ptr = (char *) shmat(shm_id, NULL, 0);
+    if (shm_ptr == (char *) -1) {
+        perror("shmat - servidor");
+        exit(1);
+    }
+
+    //  Salva a mensagem de stdin na memória
+    printf("Digite a mensagem do dia e pressione Enter:\n");
+    fgets(shm_ptr, BUFFER, stdin);
+
+    printf("\nMensagem salva na memoria compartilhada.\n");
+
+    
+
+
+    getchar();
+
+    // Desanexa o segmento de memória
+    shmdt(shm_ptr);
+
+    // Remove o segmento de memória do sistema
+    shmctl(shm_id, IPC_RMID, NULL);
+
+
+
+    return 0;
+}
+
+
+------------------------------------------------------------------------------------------------CLIENTE.C------------------------------------------------------------------------------------------------------------
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+
+#define SHM_KEY 8752
+#define BUFFER 1024
+
+int main() {
+    int shm_id;
+    char *shm_ptr;
+
+    // Localiza o segmento de memória com a chave 8752 
+    shm_id = shmget(SHM_KEY, BUFFER, 0666);
+    if (shm_id < 0) {
+        perror("shmget - cliente");
+        printf("Erro: O servidor foi executado?\n");
+        exit(1);
+    }
+
+    // Anexa o segmento de memória
+    shm_ptr = (char *) shmat(shm_id, NULL, 0);
+    if (shm_ptr == (char *) -1) {
+        perror("shmat - cliente");
+        exit(1);
+    }
+
+    // Exibe a mensagem do dia para o usuário
+    printf("\n--- Mensagem do Dia ---\n");
+    printf("%s", shm_ptr);
+    printf("-------------------------\n\n");
+
+    shmdt(shm_ptr);
+
+    return 0;
+}
+
+
+Compilação/SAIDA
+Obs: Usei 2 terminais, deixei  o terminal de servidor rodando e depois rodei o cliente(ex2a.c)
+
+Nos dois terminais:
+gcc ex2a.c -o servidor                        
+    ~/Documents/SO/lab2  gcc Cliente.c -o cliente               
+
+No terminal do servidor:
+./servidor                                    
+Digite a mensagem do dia e pressione Enter:
+Vai dar certo!
+
+Mensagem salva na memoria compartilhada.    
+
+no cliente:
+./cliente                                     
+
+--- Mensagem do Dia ---
+Vai dar certo!
+-------------------------
+
+
+
+---------------------------------------------------------------------------------------------------Exercício 3-------------------------------------------------------------------------------------------------------
+
+E:Busca paralela em vetor
+
+
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+#include <time.h>
+
+#define NUM_PROCESSOS 4
+#define TAMANHO_VETOR 1000 
+
+int main() {
+    int shm_id_vetor, shm_id_resultado;
+    int *vetor_compartilhado;
+    int *resultado_compartilhado;
+    int chave_busca = 42; 
+
+    //aloca memória compartilhada para o vetor e para o resultado
+    shm_id_vetor = shmget(IPC_PRIVATE, TAMANHO_VETOR * sizeof(int), IPC_CREAT | 0666);
+    shm_id_resultado = shmget(IPC_PRIVATE, sizeof(int), IPC_CREAT | 0666);
+
+    if (shm_id_vetor < 0 || shm_id_resultado < 0) {
+        perror("shmget");
+        exit(1);
+    }
+
+    //anexa as memórias ao processo pai
+    vetor_compartilhado = (int *)shmat(shm_id_vetor, NULL, 0);
+    resultado_compartilhado = (int *)shmat(shm_id_resultado, NULL, 0);
+
+    // preenche o vetor 
+    srand(time(NULL));
+    for (int i = 0; i < TAMANHO_VETOR; i++) {
+        vetor_compartilhado[i] = rand() % 1000;
+    }
+    // a chave tem que estar em algum lugar
+    vetor_compartilhado[rand() % TAMANHO_VETOR] = chave_busca;
+    
+    *resultado_compartilhado = -1; // -1 significa "não encontrado"
+
+    printf("Busca paralela pela chave %d\n\n", chave_busca);
+    int tamanho_bloco = TAMANHO_VETOR / NUM_PROCESSOS;
+    for (int i = 0; i < NUM_PROCESSOS; i++) {
+        if (fork() == 0) { 
+            int inicio = i * tamanho_bloco;
+            int fim = inicio + tamanho_bloco;
+            
+            printf("Processo filho %d buscando no intervalo [%d, %d)\n", getpid(), inicio, fim);
+
+            for (int j = inicio; j < fim; j++) {
+                if (vetor_compartilhado[j] == chave_busca) {
+    
+                    if (*resultado_compartilhado == -1) {
+                         *resultado_compartilhado = j; 
+                    }
+                    break;
+                }
+            }
+            exit(0); 
+        }
+    }
+    for (int i = 0; i < NUM_PROCESSOS; i++) {
+        wait(NULL);
+    }
+    printf("\nBusca finalizada.\n");
+    if (*resultado_compartilhado != -1) {
+        printf("Chave %d encontrada na posição %d do vetor.\n", chave_busca, *resultado_compartilhado);
+    } else {
+        printf("Chave %d não foi encontrada.\n", chave_busca);
+    }
+    shmdt(vetor_compartilhado);
+    shmdt(resultado_compartilhado);
+    shmctl(shm_id_vetor, IPC_RMID, NULL);
+    shmctl(shm_id_resultado, IPC_RMID, NULL);
+
+    return 0;
+}
+
+
+
+
+
+/Documents/SO/lab2  gcc ex3.c -o busca                     
+    ~/Documents/SO/lab2  ./busca                                      
+
+Busca paralela pela chave 42
+
+Processo filho 13238 buscando no intervalo [0, 250)
+Processo filho 13239 buscando no intervalo [250, 500)
+Processo filho 13240 buscando no intervalo [500, 750)
+Processo filho 13241 buscando no intervalo [750, 1000)
+
+Busca finalizada.
+Chave 42 encontrada na posição 13 do vetor.
+
+conclusão:
+o programa  cria duas memórias compartilhadas usando shmget ,uma para o vetor com os números e outra para guardar o resultado. Depois, 
+os processos se conectam a essas memórias com shmat . Com tudo preparado, o programa divide o trabalho, colocando 4 processos filhos para
+ procurar a chave ao mesmo tempo, cada um em um pedaço do vetor. O primeiro filho que encontra o número anota a posição na memória de resultado.
+Por fim, o processo pai espera todos terminarem, lê o resultado e limpa a memória.
+
+
+
+----------------------------------------------------------------------------------------------Exercício 4----------------------------------------------------------------------------------------------------------
+E: Multiplicação multi-processo
+
+----------------------------------------------------------------------------------------------------PAI.C------------------------------------------------------------------------------------------------------------
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
+
+struct SharedData {
+    int valor;
+    int sequencia;
+};
+
+int main() {
+    int shm_id1, shm_id2;
+    struct SharedData *m1, *m2;
+
+    // memória compartilhada
+    shm_id1 = shmget(IPC_PRIVATE, sizeof(struct SharedData), IPC_CREAT | 0666);
+    shm_id2 = shmget(IPC_PRIVATE, sizeof(struct SharedData), IPC_CREAT | 0666);
+    
+    // Anexa as memórias ao processo pai
+    m1 = (struct SharedData *) shmat(shm_id1, NULL, 0);
+    m2 = (struct SharedData *) shmat(shm_id2, NULL, 0);
+    m1->sequencia = 0;
+    m2->sequencia = 0;
+
+    // Converte  para string para passar via exec
+    char shm_id1_str[16];
+    char shm_id2_str[16];
+    sprintf(shm_id1_str, "%d", shm_id1);
+    sprintf(shm_id2_str, "%d", shm_id2);
+
+    //P1
+    if (fork() == 0) {
+        execlp("./filho", "filho", shm_id1_str, NULL);
+        perror("execlp P1 falhou"); // Se exec falhar
+        exit(1);
+    }
+
+    //P2
+    if (fork() == 0) {
+        execlp("./filho", "filho", shm_id2_str, NULL);
+        perror("execlp P2 falhou"); // Se exec falhar
+        exit(1);
+    }
+    
+    printf("Pai aguardando novos valores de P1 e P2...\n");
+
+    int ultima_seq1 = 0;
+    int ultima_seq2 = 0;
+
+    //Loop  pai
+    while (1) {
+        if (m1->sequencia > ultima_seq1 && m2->sequencia > ultima_seq2) {
+            //calcula o produto
+            int x = m1->valor;
+            int y = m2->valor;
+            long res = (long)x * y;
+
+            printf("\n------novos valores -----\n");
+            printf("P1 (seq %d) gerou: %d\n", m1->sequencia, x);
+            printf("P2 (seq %d) gerou: %d\n", m2->sequencia, y);
+            printf("Produto: %d * %d = %ld\n", x, y, res);
+            printf("----------------------------------\n\n");
+
+            // Atualiza os ultimos numeros da sequencia vistos
+            ultima_seq1 = m1->sequencia;
+            ultima_seq2 = m2->sequencia;
+        }
+        //sleep
+        usleep(500000); // 0.5 
+    }
+    wait(NULL);
+    wait(NULL);
+    shmdt(m1);
+    shmdt(m2);
+    shmctl(shm_id1, IPC_RMID, NULL);
+    shmctl(shm_id2, IPC_RMID, NULL);
+
+    return 0;
+}
+-----------------------------------------------------------------------------------------------------FILHO.C---------------------------------------------------------------------------------------------------------
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <time.h>
+
+struct SharedData {
+    int valor;
+    int sequencia;
+};
+
+int main(int argc, char *argv[]) {
+    if (argc < 2) {
+        fprintf(stderr, "Uso: %s <shm_id>\n", argv[0]);
+        exit(1);
+    }
+
+    int shm_id = atoi(argv[1]);
+    struct SharedData *memoria_comp;
+
+    // Anexa à memória compartilhada existente
+    memoria_comp = (struct SharedData *) shmat(shm_id, NULL, 0);
+    if (memoria_comp == (void *) -1) {
+        perror("shmat no filho");
+        exit(1);
+    }
+    srand(getpid());
+    printf("Filho (PID %d) iniciado, conectado na memoria ID %d.\n", getpid(), shm_id);
+
+    while (1) {
+        sleep((rand() % 3) + 1);
+       // valor aleatorio de 1 a 99
+        memoria_comp->valor = rand() % 100;
+        memoria_comp->sequencia++;
+
+        printf("Filho (PID %d) gerou valor: %d (sequencia: %d)\n",
+               getpid(), memoria_comp->valor, memoria_comp->sequencia);
+    }
+
+    return 0; // na teoria nunca chega aqui
+}
+
+COMPILAÇÃO/SAIDA:
+
+gcc filho.c -o filho                   
+~/Documents/SO/lab2  gcc pai.c -o pai                               ✔ 
+~/Documents/SO/lab2  ./pai                                          ✔ 
+Pai aguardando novos valores de P1 e P2...
+Filho (PID 19388) iniciado, conectado na memoria ID 131115.
+Filho (PID 19387) iniciado, conectado na memoria ID 131114.
+Filho (PID 19388) gerou valor: 76 (sequencia: 1)
+Filho (PID 19387) gerou valor: 83 (sequencia: 1)
+Filho (PID 19388) gerou valor: 10 (sequencia: 2)
+
+------novos valores -----
+P1 (seq 1) gerou: 83
+P2 (seq 2) gerou: 10
+Produto: 83 * 10 = 830
+----------------------------------
+
+Filho (PID 19387) gerou valor: 14 (sequencia: 2)
+Filho (PID 19388) gerou valor: 31 (sequencia: 3)
+
+------novos valores -----
+P1 (seq 2) gerou: 14
+P2 (seq 3) gerou: 31
+Produto: 14 * 31 = 434
+----------------------------------
+
+Filho (PID 19387) gerou valor: 69 (sequencia: 3)
+Filho (PID 19388) gerou valor: 77 (sequencia: 4)
+
+------novos valores -----
+P1 (seq 3) gerou: 69
+P2 (seq 4) gerou: 77
+Produto: 69 * 77 = 5313
+----------------------------------
+
+conclusão:
+O resultado gerado no  4 foi uma consequência direta da execução não em tempo real dos dois processos filhos, 
+que produziam dados em intervalos aleatórios. O processo pai não reagia a cada valor individual, mas sim verificava de 
+tempos em tempos o estado das memórias compartilhadas em um loop.Por isso  que alguns valores gerados pelos filhos foram
+"pulados" ou sobrescritos antes que o pai conseguisse ler eles.
+
+

@@ -1,0 +1,318 @@
+
+Davi Donato   - 2320399
+Yuri Trindade - 2321168
+
+
+EX1) ---------------------------------------------------------------------------------------------- >>>
+
+### CÓDIGO ================================= >
+# ex1Escritor.c ---------------- >
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+
+int main() {
+    int fd;
+    char buffer[256];
+    char *fifo = "minha_fifo";
+
+    fd = open(fifo, O_WRONLY); 
+    if (fd < 0) {
+        perror("Erro ao abrir FIFO");
+        exit(1);
+    }
+
+    printf("Escreva mensagens. \n");
+    while (1) {
+        if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+            write(fd, buffer, strlen(buffer));
+        }
+    }
+
+    close(fd);
+    return 0;
+}
+
+# ex1Leitor.c ---------------- >
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+
+int main() {
+    int fd;
+    char buffer[256];
+    char *fifo = "minha_fifo";
+
+    fd = open(fifo, O_RDONLY); 
+    if (fd < 0) {
+        perror("Erro ao abrir FIFO");
+        exit(1);
+    }
+
+    printf("Leitor pronto. Aguardando mensagens...\n");
+    while (1) {
+        ssize_t n = read(fd, buffer, sizeof(buffer) - 1);
+        if (n > 0) {
+            buffer[n] = '\0'; 
+            printf("Recebido: %s", buffer);
+            fflush(stdout);
+        }
+    }
+
+    close(fd);
+    return 0;
+}
+
+
+### RESULTADO ============================== >
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ mkfifo meu_fifo
+
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex1Escritor
+Escreva mensagens.
+Davi Donato            
+One Piece
+
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex1Leitor
+Leitor pronto. Aguardando mensagens...
+Recebido: Davi Donato
+Recebido: One Piece
+
+
+
+### EXPLICAÇÃO ============================= >
+Um programa fica em loop lendo da 
+FIFO e imprimindo na tela, outro 
+lê do teclado e envia para a FIFO.
+Tudo o que o usuário digita no cliente 
+aparece imediatamente no terminal do leitor.
+
+
+EX2) ---------------------------------------------------------------------------------------------- >>>
+
+### CÓDIGO ================================= >
+# ex2.c ---------------- >
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_NAME "minha_fifo"
+
+int main() {
+    // 1. Cria FIFO
+    mkfifo(FIFO_NAME, 0666);
+
+    // Pai já abre a FIFO para leitura antes dos filhos escreverem
+    int fd_read = open(FIFO_NAME, O_RDONLY | O_NONBLOCK);
+    if (fd_read < 0) { perror("open read"); exit(1); }
+
+    pid_t pid1, pid2;
+
+    pid1 = fork();
+    if (pid1 == 0) {
+        int fd = open(FIFO_NAME, O_WRONLY);
+        char msg1[] = "Mensagem do filho 1\n";
+        write(fd, msg1, strlen(msg1));
+        close(fd);
+        exit(0);
+    }
+
+    pid2 = fork();
+    if (pid2 == 0) {
+        int fd = open(FIFO_NAME, O_WRONLY);
+        char msg2[] = "Mensagem do filho 2\n";
+        write(fd, msg2, strlen(msg2));
+        close(fd);
+        exit(0);
+    }
+
+    waitpid(pid1, NULL, 0);
+    waitpid(pid2, NULL, 0);
+
+    char buffer[256];
+    ssize_t n;
+    printf("Pai vai ler da FIFO:\n");
+
+    while ((n = read(fd_read, buffer, sizeof(buffer)-1)) > 0) {
+        buffer[n] = '\0';
+        printf("%s", buffer);
+    }
+
+    close(fd_read);
+    unlink(FIFO_NAME);
+    return 0;
+}
+
+
+ 
+
+
+### RESULTADO ============================== >
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex2
+Pai vai ler da FIFO:
+Mensagem do filho 1
+Mensagem do filho 2
+
+
+### EXPLICAÇÃO ============================= >
+O pai cria a FIFO, gera dois filhos 
+que escrevem mensagens dentro dela e, 
+após waitpid, o pai lê o conteúdo.
+O terminal exibe as mensagens “Mensagem do 
+filho 1” e “Mensagem do filho 2”.
+
+EX3) ---------------------------------------------------------------------------------------------- >>>
+
+### CÓDIGO ================================= >
+
+# ex3Server.c ---------------- >
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <ctype.h>
+#include <string.h>
+
+#define FIFO_C2S "fifo_c2s"
+#define FIFO_S2C "fifo_s2c"
+
+void to_upper(char *str) {
+    for (int i = 0; str[i]; i++) {
+        str[i] = toupper((unsigned char) str[i]);
+    }
+}
+
+int main() {
+    int fd_in, fd_out;
+    char buffer[256];
+
+    // Abre FIFOs
+    fd_in  = open(FIFO_C2S, O_RDONLY);
+    fd_out = open(FIFO_S2C, O_WRONLY);
+
+    if (fd_in < 0 || fd_out < 0) {
+        perror("Erro ao abrir FIFOs");
+        exit(1);
+    }
+
+    printf("Servidor rodando... aguardando mensagens.\n");
+
+    while (1) {
+        ssize_t n = read(fd_in, buffer, sizeof(buffer) - 1);
+        if (n > 0) {
+            buffer[n] = '\0';
+            printf("Servidor recebeu: %s", buffer);
+
+            to_upper(buffer);
+
+            write(fd_out, buffer, strlen(buffer));
+        }
+    }
+
+    close(fd_in);
+    close(fd_out);
+    return 0;
+}
+
+
+# ex3Cliente.c ---------------- >
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+
+#define FIFO_C2S "fifo_c2s"
+#define FIFO_S2C "fifo_s2c"
+
+int main() {
+    int fd_in, fd_out;
+    char buffer[256];
+
+    fd_in  = open(FIFO_C2S, O_WRONLY);
+    fd_out = open(FIFO_S2C, O_RDONLY);
+
+    if (fd_in < 0 || fd_out < 0) {
+        perror("Erro ao abrir FIFOs");
+        exit(1);
+    }
+
+    printf("Cliente pronto. Digite mensagens (CTRL+C para sair):\n");
+
+    while (1) {
+        if (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+            write(fd_in, buffer, strlen(buffer));
+
+            ssize_t n = read(fd_out, buffer, sizeof(buffer) - 1);
+            if (n > 0) {
+                buffer[n] = '\0';
+                printf("Resposta do servidor: %s", buffer);
+            }
+        }
+    }
+
+    close(fd_in);
+    close(fd_out);
+    return 0;
+}
+
+
+
+### RESULTADO ============================== >
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex3Server
+Servidor rodando... aguardando mensagens.
+Servidor recebeu: Mensagem Terminal 1
+Servidor recebeu: Mensagem terminal 2
+
+
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex3Cliente
+Cliente pronto. Digite mensagens (CTRL+C para sair):
+Mensagem Terminal 1
+Resposta do servidor: MENSAGEM TERMINAL 1
+
+
+dd@DESKTOP-F81NKPN:~/DaviDonato/PUC/INF1316$ ./ex3Cliente
+Cliente pronto. Digite mensagens (CTRL+C para sair):
+Mensagem terminal 2
+Resposta do servidor: MENSAGEM TERMINAL 2
+
+
+### EXPLICAÇÃO ============================= >
+O servidor lê requisições pela FIFO de entrada, 
+transforma as strings em maiúsculas e envia de 
+volta pela FIFO de saída. O cliente lê do teclado 
+e imprime a resposta do servidor.
+Ao digitar em minúsculas no cliente, 
+a resposta impressa volta toda em maiúsculas.
+
+
+
+
+#==================================================================================================================================================== |||
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
